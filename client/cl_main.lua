@@ -37,7 +37,7 @@ end
 -- Handle Robbing Local --
 local function robLocal(entity)
     if lib.progressCircle({
-        label = 'Running Pockets...',
+        label = 'Vasculhando bolsos...',
         duration = (config.robLength * 1000),
         position = 'bottom',
         useWhileDead = false,
@@ -81,6 +81,7 @@ local function addInteraction(entity)
                     icon = 'fas fa-gun',
                     label = 'Roubar',
                     action = function(entity)
+                        if GetEntityHealth(entity) <= 101 then return end
                         robLocal(entity)
                     end,
                 }

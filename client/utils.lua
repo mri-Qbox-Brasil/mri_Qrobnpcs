@@ -64,7 +64,7 @@ function attackingPed(entity)
     end
 
     TaskCombatHatedTargetsAroundPed(entity, 50, 0)
-    lib.notify({ title = 'Fight Back!', description = 'They didn\'t like that!', type = 'error' })
+    lib.notify({ title = 'Tentando revidar!', description = 'Não gostaram do que você fez...', type = 'error' })
 end
 
 -- Ped Chooses to Flee --
@@ -91,7 +91,7 @@ function fightOrFlee(entity)
 
     if randomChance <= fleeChance then
         pedFlees(entity)
-        lib.notify({ title = 'Eles fugiram!', type = 'error'})
+        lib.notify({ title = 'Tentativa de fuga!', type = 'error'})
         return true
     end
 
