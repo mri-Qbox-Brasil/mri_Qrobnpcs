@@ -4,10 +4,10 @@
 </div>
 
 # Features:
-- QB / QBX / OX / ESX Support
+- QB / QBX / OX / ESX / ND support via [Renewed-Lib](https://github.com/Renewed-Scripts/Renewed-Lib)
 - Rob local NPCs
-- Secure checks preventing spam, robbing animals, robbing spawned peds from resources, etc
-- Sets 'robbed' statebag on peds once they are robbed / run away / fight back, preventing them from being robbed again
+- Server-authoritative payouts — the server re-checks distance, job, cop count, ped validity, and per-player + per-ped cooldowns before it pays anyone
+- Sets a `robbed` statebag on peds once they are robbed / run away / fight back, preventing them from being robbed again
 - Required cop count, or zero
 - Min / max payouts
 - Blacklisted jobs
@@ -19,7 +19,7 @@
   - If ped fights back, random chance they have a weapon, random weapon is chosen from the config
   - Chance to receive items from peds pocket
 - Animations
-  - Ped puts hands up, then surrenders
+  - Ped turns to face you, raises their hands, then eases down into a kneel
   - Player does a 'robbing' animation
   - Ped does animation to get up and flee
 - Easy configurations
@@ -31,6 +31,29 @@
 
 # Dependencies:
 - [ox_lib](https://github.com/overextended/ox_lib/releases)
+- [Renewed-Lib](https://github.com/Renewed-Scripts/Renewed-Lib) — the framework bridge. **This is required.** Without it the resource will not start.
 - Supported Interaction Resources:
-    - [qb-target](https://github.com/overextended/ox_target/releases) or [ox_target](https://github.com/overextended/ox_target/releases)
-    - [interact](https://github.com/darktrovx/interact)
+    - [ox_target](https://github.com/overextended/ox_target/releases) or [qb-target](https://github.com/qbcore-framework/qb-target)
+    - [sleepless_interact](https://github.com/Sleepless-Development/sleepless_interact) — set `useSleeplessInteract = true` in `configs/client.lua`
+
+# Layout
+
+| Path | What lives there |
+|---|---|
+| `configs/shared.lua` | Values both sides read: required cop count, blacklisted jobs |
+| `configs/client.lua` | Client settings, ped reaction chances, allowed weapons, and the `dispatch` bridge |
+| `configs/server.lua` | Payouts, loot, cooldowns, and the `addCash` / `addItem` / `hasGroup` bridges |
+| `client/utils.lua` | Targeting, raycasting, and every ped animation |
+| `client/cl_main.lua` | The aim loop and the holdup state machine |
+| `server/sv_main.lua` | The payout callback, its validation, and the cop count |
+
+Everything a server owner should need to change is a value or a function in `configs/`. The
+`addCash`, `addItem`, `hasGroup`, and `dispatch` functions are the swap points — rewrite them
+for your inventory, framework, or dispatch resource and the rest of the code does not care.
+
+# Notes
+
+- **Robbing with a weapon already drawn:** fixed. The aim loop is armed on resource start and
+  on player load, not only when `lib.onCache('weapon')` fires, so restarting the resource with
+  a gun in hand works.
+- The rob raycast now tests world geometry, so you can no longer hold up a ped through a wall.
