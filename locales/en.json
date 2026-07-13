@@ -1,0 +1,18 @@
+{
+    "rob_citizen": "Rob Citizen",
+    "running_pockets": "Running Pockets...",
+
+    "no_cash": "No Cash!",
+    "no_cash_description": "They didn't have any cash!",
+
+    "fight_back": "Fight Back!",
+    "fight_back_description": "They didn't like that!",
+
+    "ran_away": "They ran away!",
+
+    "slow_down": "Slow Down!",
+    "slow_down_description": "Give it a minute before you try that again.",
+
+    "pockets_full": "Pockets Full!",
+    "pockets_full_description": "You couldn't carry what they had on them."
+}
