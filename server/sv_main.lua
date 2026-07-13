@@ -1,107 +1,132 @@
 local config = require 'configs.server'
 local shared = require 'configs.shared'
-local globalState = GlobalState
 
-globalState.copCount = globalState?.copCount or 0
+local robbedPeds = {}
+local cooldowns = {}
 
-local function distanceCheck(player, target)
-    local pCoords = GetEntityCoords(GetPlayerPed(player))
-    local tCoords = GetEntityCoords(NetworkGetEntityFromNetworkId(target))
-    local dist = #(tCoords - pCoords)
+GlobalState.copCount = 0
 
-    return dist <= 5
+local function isPlayerPed(entity)
+    local players = GetPlayers()
+
+    for x = 1, #players do
+        if GetPlayerPed(players[x]) == entity then
+            return true
+        end
+    end
+
+    return false
 end
 
--- Checks if Player is Police --
-local function hasPoliceJob(src, jobs)
-    local pJob = getPlayerJob(src)
-    if type(jobs) == 'table' then
-        for x = 1, #jobs do
-            if jobs[x] == pJob then
-                return true
-            end
-        end
+---@return boolean, number? entity
+local function validateTarget(src, netId)
+    if type(netId) ~= 'number' or netId <= 0 then return false end
+
+    local entity = NetworkGetEntityFromNetworkId(netId)
+
+    if entity == 0 or not DoesEntityExist(entity) then return false end
+    if GetEntityType(entity) ~= 1 or isPlayerPed(entity) then return false end
+
+    local ped = GetPlayerPed(src)
+
+    if GetEntityHealth(ped) <= 0 then return false end
+    if #(GetEntityCoords(ped) - GetEntityCoords(entity)) > config.robDistance then return false end
+
+    return true, entity
+end
+
+lib.callback.register('xt-robnpcs:server:robNPC', function(source, netId)
+    local valid, entity = validateTarget(source, netId)
+    if not valid then return false end
+
+    local now = os.time()
+
+    -- The per-player cooldown is the payout rate limit: it is what stops a client that spams
+    -- this callback in a single tick from being paid more than once. Its read and its write
+    -- must not straddle a yield, or every spammed call passes the read before any reaches the
+    -- write. Everything between them here is synchronous, and config.hasGroup -- the customer
+    -- swap point, and the only call that could yield -- is checked AFTER the reservation and
+    -- rolls it back on failure, so the guarantee holds even if a framework getter yields.
+    if (cooldowns[source] or 0) > now then
+        lib.notify(source, { title = locale('slow_down'), description = locale('slow_down_description'), type = 'error' })
+        return false
+    end
+
+    if (robbedPeds[netId] or 0) > now then return false end
+    if shared.requiredCops > 0 and GlobalState.copCount < shared.requiredCops then return false end
+
+    cooldowns[source] = now + config.robCooldown
+    robbedPeds[netId] = now + config.pedCooldown
+
+    if config.hasGroup(source, shared.blacklistedJobs) then
+        cooldowns[source] = nil
+        robbedPeds[netId] = nil
+        return false
+    end
+
+    Entity(entity).state:set('robbed', true, true)
+
+    if math.random(100) <= math.random(config.payOutChance.min, config.payOutChance.max) then
+        config.addCash(source, math.random(config.payOut.min, config.payOut.max))
     else
-        return (pJob == jobs)
-    end
-end
-
--- Receive Cash --
-local function receiveCashChance(src)
-    local payChance = math.random(config.payOutChance.min, config.payOutChance.max)
-    local randomChance = math.random(100)
-    local callback = false
-
-    if randomChance <= payChance then
-        local pay = math.random(config.payOut.min, config.payOut.max)
-        if config.addCash(src, pay) then
-            callback = true
-        end
-    else
-        lib.notify(src, { title = 'No Cash!', description = 'They didn\'t have any cash!', type = 'error' })
-        callback = true
+        lib.notify(source, { title = locale('no_cash'), description = locale('no_cash_description'), type = 'error' })
     end
 
-    return callback
-end
+    if math.random(100) <= math.random(config.chanceItemsFound.min, config.chanceItemsFound.max) then
+        local loot = config.lootableItems[math.random(#config.lootableItems)]
 
--- Receive Items --
-local function receiveItemsChance(src)
-    local itemChance = math.random(config.chanceItemsFound.min, config.chanceItemsFound.max)
-    local randomChance = math.random(100)
-    local callback = false
-
-    if randomChance <= itemChance then
-        local randomItem = math.random(#config.lootableItems)
-        local randomAmount = math.random(config.lootableItems[randomItem].min, config.lootableItems[randomItem].max)
-        if config.addItem(src, config.lootableItems[randomItem].item, randomAmount) then
-            callback = true
+        if not config.addItem(source, loot.item, math.random(loot.min, loot.max)) then
+            lib.notify(source, { title = locale('pockets_full'), description = locale('pockets_full_description'), type = 'error' })
         end
     end
 
-    return callback
-end
-
--- Get Paid (or not) & Set State --
-lib.callback.register('xt-robnpcs:server:robNPC', function(source, netID)
-    local src = source
-    local dist = distanceCheck(source, netID)
-    local callback = false
-    if not dist then return callback end
-
-    local entity = NetworkGetEntityFromNetworkId(netID)
-    local state = Entity(entity).state
-
-    if state then
-        state:set('robbed', src, true)
-        local payChance = math.random(config.payOutChance.min, config.payOutChance.max)
-        local randomChance = math.random(100)
-        if receiveCashChance(src) then
-            receiveItemsChance(src)
-            callback = true
-        end
-    end
-
-    return callback
+    return true
 end)
 
--- Constantly Update Cop Count --
+local function updateCopCount()
+    local players = GetPlayers()
+    local count = 0
+
+    for x = 1, #players do
+        if config.hasGroup(tonumber(players[x]), config.policeJobs) then
+            count += 1
+        end
+    end
+
+    if GlobalState.copCount ~= count then
+        GlobalState.copCount = count
+    end
+end
+
 AddEventHandler('onResourceStart', function(resource)
     if resource ~= GetCurrentResourceName() then return end
-    if shared.requiredCops == 0 then return end
 
+    print(('^5xT Development ^0| ^5%s^0'):format(GetResourceMetadata(resource, 'description', 0)))
+    print('^5Support: ^0https://dsc.gg/xtdev')
+
+    -- Cooldowns are never cleared on drop, or reconnecting would wipe them. They expire
+    -- instead. Net ids are recycled, so a ped that is gone must be forgotten too, or its
+    -- id blocks whichever live ped inherits it.
     SetInterval(function()
-        local players = GetPlayers()
-        local count = 0
+        local now = os.time()
 
-        for _, src in pairs(players) do
-            if hasPoliceJob(tonumber(src), config.policeJobs) then
-                count += 1
+        for src, expiry in pairs(cooldowns) do
+            if expiry <= now then
+                cooldowns[src] = nil
             end
         end
 
-        if globalState.copCount ~= count then
-            globalState.copCount = count
+        for netId, expiry in pairs(robbedPeds) do
+            local entity = NetworkGetEntityFromNetworkId(netId)
+
+            if expiry <= now or entity == 0 or not DoesEntityExist(entity) then
+                robbedPeds[netId] = nil
+            end
         end
     end, 60000)
+
+    if shared.requiredCops <= 0 then return end
+
+    updateCopCount()
+    SetInterval(updateCopCount, config.copCountInterval * 1000)
 end)
