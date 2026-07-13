@@ -14,24 +14,31 @@ local ROB_CLIP = 'robbery_action_b'
 -- World, vehicles, peds and objects. Peds-only flags let the ray pass through walls.
 local RAYCAST_FLAGS = 1 | 2 | 4 | 16
 
--- Cops, medics, firemen, mission peds, swat, army. Ambient civilians only.
-local blockedPedTypes = { [6] = true, [20] = true, [21] = true, [26] = true, [27] = true, [29] = true }
-
 local allowedWeapons = {}
 for x = 1, #config.allowedWeapons do
     allowedWeapons[joaat(config.allowedWeapons[x])] = true
 end
 
-local targetExport, useQbTarget
+local blockedPedTypes = {}
+for x = 1, #config.blockedPedTypes do
+    blockedPedTypes[config.blockedPedTypes[x]] = true
+end
+
+local interactExport, isQbTarget
 
 -- qb-target may still be 'starting' when this file loads, so resolve on first use.
-local function target()
-    if not targetExport then
-        useQbTarget = GetResourceState('qb-target') == 'started'
-        targetExport = useQbTarget and exports['qb-target'] or exports.ox_target
+local function interaction()
+    if not interactExport then
+        if config.useSleeplessInteract then
+            interactExport = exports.sleepless_interact
+            isQbTarget = false
+        else
+            isQbTarget = GetResourceState('qb-target') == 'started'
+            interactExport = isQbTarget and exports['qb-target'] or exports.ox_target
+        end
     end
 
-    return targetExport, useQbTarget
+    return interactExport, isQbTarget
 end
 
 local utils = {}
@@ -93,25 +100,7 @@ function utils.notifyPolice(coords)
 end
 
 function utils.addInteraction(entity, onSelect)
-    if config.useInteract then
-        return exports.interact:AddEntityInteraction({
-            netId = NetworkGetNetworkIdFromEntity(entity),
-            id = 'robLocal',
-            distance = 4.0,
-            interactDst = 2.0,
-            ignoreLos = false,
-            options = {
-                {
-                    label = locale('rob_citizen'),
-                    action = function()
-                        onSelect(entity)
-                    end,
-                }
-            }
-        })
-    end
-
-    local export, isQb = target()
+    local export, isQb = interaction()
 
     if isQb then
         return export:AddTargetEntity(entity, {
@@ -129,6 +118,7 @@ function utils.addInteraction(entity, onSelect)
         })
     end
 
+    -- sleepless_interact and ox_target take the same arguments here.
     export:addLocalEntity(entity, {
         {
             name = 'rob_local',
@@ -143,11 +133,7 @@ function utils.addInteraction(entity, onSelect)
 end
 
 function utils.removeInteraction(entity)
-    if config.useInteract then
-        return exports.interact:RemoveEntityInteraction(NetworkGetNetworkIdFromEntity(entity), 'robLocal')
-    end
-
-    local export, isQb = target()
+    local export, isQb = interaction()
 
     if isQb then
         return export:RemoveTargetEntity(entity, locale('rob_citizen'))
@@ -168,9 +154,7 @@ function utils.robAnimation(length)
     })
 end
 
--- Turn to face the robber, hands up, then ease down into the kneel. The blend speeds are
--- deliberately low so the ped settles into each pose rather than snapping between them.
--- Bails on every yield if the holdup ended, or the freeze would outlive the robbery.
+-- Turn to face the robber, hands up, then ease down into the kneel
 function utils.surrender(entity, isHeldUp)
     lib.requestAnimDict(ANIM_DICT)
 
