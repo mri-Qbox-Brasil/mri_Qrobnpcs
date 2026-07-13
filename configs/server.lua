@@ -17,11 +17,6 @@ return {
         { item = 'rolex', min = 1, max = 2 },
         { item = 'phone', min = 1, max = 2 }
     },
-    policeJobs = {
-        'police',
-        'lspd'
-    },
-    copCountInterval = 30,  -- How often (seconds) the online cop count is recalculated
     robCooldown = 20,       -- Cooldown (seconds) between robberies, per player. This is the payout rate limit
     pedCooldown = 300,      -- How long (seconds) a robbed ped stays unrobbable, for everyone
     robDistance = 5.0,      -- Max distance (m) the player may be from the ped when the payout is claimed

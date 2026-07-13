@@ -4,8 +4,6 @@ local shared = require 'configs.shared'
 local robbedPeds = {}
 local cooldowns = {}
 
-GlobalState.copCount = 0
-
 local function isPlayerPed(entity)
     local players = GetPlayers()
 
@@ -53,7 +51,11 @@ lib.callback.register('xt-robnpcs:server:robNPC', function(source, netId)
     end
 
     if (robbedPeds[netId] or 0) > now then return false end
-    if shared.requiredCops > 0 and GlobalState.copCount < shared.requiredCops then return false end
+
+    -- copCount is owned by Renewed-Lib, which counts cops on DUTY off the renewed_service
+    -- statebag. Never write this key -- Renewed increments it relatively, so an absolute
+    -- assignment here would corrupt the count for every resource reading it.
+    if shared.requiredCops > 0 and (GlobalState.copCount or 0) < shared.requiredCops then return false end
 
     cooldowns[source] = now + config.robCooldown
     robbedPeds[netId] = now + config.pedCooldown
@@ -83,21 +85,6 @@ lib.callback.register('xt-robnpcs:server:robNPC', function(source, netId)
     return true
 end)
 
-local function updateCopCount()
-    local players = GetPlayers()
-    local count = 0
-
-    for x = 1, #players do
-        if config.hasGroup(tonumber(players[x]), config.policeJobs) then
-            count += 1
-        end
-    end
-
-    if GlobalState.copCount ~= count then
-        GlobalState.copCount = count
-    end
-end
-
 AddEventHandler('onResourceStart', function(resource)
     if resource ~= GetCurrentResourceName() then return end
 
@@ -124,9 +111,4 @@ AddEventHandler('onResourceStart', function(resource)
             end
         end
     end, 60000)
-
-    if shared.requiredCops <= 0 then return end
-
-    updateCopCount()
-    SetInterval(updateCopCount, config.copCountInterval * 1000)
 end)

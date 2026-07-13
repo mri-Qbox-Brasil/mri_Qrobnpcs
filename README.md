@@ -8,7 +8,9 @@
 - Rob local NPCs
 - Server-authoritative payouts — the server re-checks distance, job, cop count, ped validity, and per-player + per-ped cooldowns before it pays anyone
 - Sets a `robbed` statebag on peds once they are robbed / run away / fight back, preventing them from being robbed again
-- Required cop count, or zero
+- Required on-duty cop count, or zero — read from Renewed-Lib's `GlobalState.copCount`, so it
+  stays in sync with every other Renewed resource instead of being recounted here. Which jobs
+  count as police is Renewed's `inventory:police` convar (default: `["police", "sheriff"]`)
 - Min / max payouts
 - Blacklisted jobs
   - Set jobs can not rob locals
@@ -45,7 +47,7 @@
 | `configs/server.lua` | Payouts, loot, cooldowns, and the `addCash` / `addItem` / `hasGroup` bridges |
 | `client/utils.lua` | Targeting, raycasting, and every ped animation |
 | `client/cl_main.lua` | The aim loop and the holdup state machine |
-| `server/sv_main.lua` | The payout callback, its validation, and the cop count |
+| `server/sv_main.lua` | The payout callback and its validation |
 
 Everything a server owner should need to change is a value or a function in `configs/`. The
 `addCash`, `addItem`, `hasGroup`, and `dispatch` functions are the swap points — rewrite them
