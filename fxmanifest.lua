@@ -5,7 +5,7 @@ lua54 'yes'
 
 author 'xT Development'
 description 'Rob NPCs | xT Development'
-version '1.1.0'
+version '1.1.1'
 repository 'https://github.com/xT-Development/xt-robnpcs'
 
 ox_lib 'locale'
