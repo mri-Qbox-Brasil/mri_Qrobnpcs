@@ -13,7 +13,7 @@ return {
     },
     lootableItems = {       -- Items player can loot
         { item = 'rolex', min = 1, max = 2 },
-        { item = 'phone', min = 1, max = 2 }
+        { item = 'phone_black', min = 1, max = 2 }
     },
     policeJobs = {
         'police',
