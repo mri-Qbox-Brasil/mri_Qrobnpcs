@@ -1,0 +1,132 @@
+name: Release
+
+# Automatic release flow:
+#   Bump `version` in fxmanifest.lua and push to main.
+#   If the version changed since the previous commit, this workflow packages the
+#   installable resource, tags v<version>, and publishes a GitHub Release
+#   (marked "Latest") with the zip attached.
+#
+# No version bump = no release. You can also run it manually from the Actions
+# tab to force a release of whatever version is currently in the manifest.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - fxmanifest.lua
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for version bump
+        id: check
+        run: |
+          set -euo pipefail
+
+          read_version() { sed -nE "s/^version '([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/p" | head -1; }
+
+          current=$(read_version < fxmanifest.lua)
+          if [ -z "$current" ]; then
+            echo "::error::Could not read a MAJOR.MINOR.PATCH version from fxmanifest.lua"
+            exit 1
+          fi
+
+          # Manual runs force a release of the current version (skip the diff check).
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            previous=''
+            echo "Manual run — forcing release of current version."
+          else
+            before='${{ github.event.before }}'
+            if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              previous=''
+            else
+              previous=$(git show "$before:fxmanifest.lua" 2>/dev/null | read_version || true)
+            fi
+          fi
+
+          if [ "$current" = "$previous" ]; then
+            echo "Version unchanged ($current) — nothing to release."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Never re-release a version that already has a tag.
+          if git rev-parse "refs/tags/v$current" >/dev/null 2>&1; then
+            echo "Tag v$current already exists — skipping."
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Version bumped ${previous:-<none>} -> $current"
+          echo "bumped=true" >> "$GITHUB_OUTPUT"
+          echo "version=$current" >> "$GITHUB_OUTPUT"
+          echo "tag=v$current" >> "$GITHUB_OUTPUT"
+
+      - name: Package resource
+        id: package
+        if: steps.check.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          name='${{ github.event.repository.name }}'
+          file="${name}-${{ steps.check.outputs.tag }}.zip"
+
+          rm -rf build
+          mkdir -p "build/${name}"
+
+          # Copy the installable resource only — exclude dev tooling.
+          # '.*' drops every dot-prefixed file/folder at any depth (.git, .github,
+          # .claude, .gitignore, ...) so none can leak into the release.
+          rsync -a \
+            --exclude='.*' \
+            --exclude='build' \
+            --exclude='*.zip' \
+            ./ "build/${name}/"
+
+          ( cd build && zip -r "../${file}" "${name}" >/dev/null )
+
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "Packaged ${file}:"
+          ( cd build && find "${name}" -type f | sort )
+
+      - name: Tag the release commit
+        if: steps.check.outputs.bumped == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          tag='${{ steps.check.outputs.tag }}'
+          if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists — reusing it."
+          else
+            git tag "$tag"
+            git push origin "$tag"
+          fi
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.bumped == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.check.outputs.tag }}
+          name: ${{ steps.check.outputs.tag }}
+          files: ${{ steps.package.outputs.file }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          # Publish as the repo's "Latest" release so it heads the Releases page.
+          make_latest: true
